@@ -34,8 +34,7 @@ size_t writeToStream(char* buffer, size_t size, size_t nitems, std::ostream* str
     return realwrote;
 }
 
-ExchangeApi::ExchangeApi(const std::string& applicationKey) {
-    curl_global_init(CURL_GLOBAL_ALL);
+ExchangeApi::ExchangeApi(const std::string& applicationKey, std::unique_ptr<ICurl>&& curl) : curl(std::move(curl)) {
     ssoid = "";
     this->applicationKey = applicationKey;
     // use global end point by default
@@ -65,11 +64,11 @@ bool ExchangeApi::login(const std::string& username, const std::string& password
         tokenKey = "sessionToken";
     }
 
-    std::unique_ptr<CURL, void(*)(CURL*)> curl(curl_easy_init(), curl_easy_cleanup);
+    CurlHandle handle = curl->easyInit();
 
-    if (curl.get()) {
-        curl_easy_setopt(curl.get(), CURLOPT_URL, endPoint.c_str());
-        curl_easy_setopt(curl.get(), CURLOPT_USE_SSL, CURLUSESSL_ALL);
+    if (handle.get()) {
+        curl->easySetopt(handle, CURLOPT_URL, endPoint.c_str());
+        curl->easySetopt(handle, CURLOPT_USE_SSL, CURLUSESSL_ALL);
 
         SList chunk;
         std::string header = "Accept: application/json";
@@ -78,25 +77,25 @@ bool ExchangeApi::login(const std::string& username, const std::string& password
         chunk.append(header);
         header = "Content-Type: application/x-www-form-urlencoded";
         chunk.append(header);
-        curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, chunk.get());
+        curl->easySetopt(handle, CURLOPT_HTTPHEADER, chunk.get());
 
         if (loginWithCert) {
-            curl_easy_setopt(curl.get(), CURLOPT_SSLCERT, certFilename.c_str());
-            curl_easy_setopt(curl.get(), CURLOPT_SSLKEY, keyFilename.c_str());
+            curl->easySetopt(handle, CURLOPT_SSLCERT, certFilename.c_str());
+            curl->easySetopt(handle, CURLOPT_SSLKEY, keyFilename.c_str());
         }
 
         std::string postFields = "username=" + username + "&password=" + password;
-        curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, postFields.c_str());
+        curl->easySetopt(handle, CURLOPT_POSTFIELDS, postFields.c_str());
 
-        curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeToStream);
+        curl->easySetopt(handle, CURLOPT_WRITEFUNCTION, writeToStream);
         std::stringstream result;
-        curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &result);
+        curl->easySetopt(handle, CURLOPT_WRITEDATA, &result);
 
-        curl_easy_setopt(curl.get(), CURLOPT_NOSIGNAL, 1);
+        curl->easySetopt(handle, CURLOPT_NOSIGNAL, 1);
         char errorBuffer[CURL_ERROR_SIZE];
-        curl_easy_setopt(curl.get(), CURLOPT_ERRORBUFFER, errorBuffer);
+        curl->easySetopt(handle, CURLOPT_ERRORBUFFER, errorBuffer);
         errorBuffer[0] = 0;
-        CURLcode curlResult = curl_easy_perform(curl.get());
+        CURLcode curlResult = curl->easyPerform(handle);
 
         if (curlResult == CURLE_OK) {
             Json::Value json;
@@ -132,21 +131,21 @@ bool ExchangeApi::retrieveMenu(const std::string& cacheFilename) {
     pendingMenuJson = Json::Value();
     bool refreshResult = false;
 
-    std::unique_ptr<CURL, void(*)(CURL*)> curl(curl_easy_init(), curl_easy_cleanup);
+    CurlHandle handle = curl->easyInit();
 
-    if (curl.get()) {
+    if (handle.get()) {
         std::string url = ExchangeApi::HOST_UK + "/exchange/betting/rest/v1/en/navigation/menu.json";
 
-        curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl.get(), CURLOPT_USE_SSL, CURLUSESSL_ALL);
-        curl_easy_setopt(curl.get(), CURLOPT_ACCEPT_ENCODING, "gzip");
-        curl_easy_setopt(curl.get(), CURLOPT_NOSIGNAL, 1);
-        curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeToStream);
+        curl->easySetopt(handle, CURLOPT_URL, url.c_str());
+        curl->easySetopt(handle, CURLOPT_USE_SSL, CURLUSESSL_ALL);
+        curl->easySetopt(handle, CURLOPT_ACCEPT_ENCODING, "gzip");
+        curl->easySetopt(handle, CURLOPT_NOSIGNAL, 1);
+        curl->easySetopt(handle, CURLOPT_WRITEFUNCTION, writeToStream);
         std::stringstream result;
-        curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &result);
+        curl->easySetopt(handle, CURLOPT_WRITEDATA, &result);
 
         char errorBuffer[CURL_ERROR_SIZE];
-        curl_easy_setopt(curl.get(), CURLOPT_ERRORBUFFER, errorBuffer);
+        curl->easySetopt(handle, CURLOPT_ERRORBUFFER, errorBuffer);
         errorBuffer[0] = 0;
 
         SList chunk;
@@ -154,9 +153,9 @@ bool ExchangeApi::retrieveMenu(const std::string& cacheFilename) {
         chunk.append(header);
         header = "X-Authentication: " + ssoid;
         chunk.append(header);
-        curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, chunk.get());
+        curl->easySetopt(handle, CURLOPT_HTTPHEADER, chunk.get());
 
-        CURLcode curlResult = curl_easy_perform(curl.get());
+        CURLcode curlResult = curl->easyPerform(handle);
 
         if (curlResult == CURLE_OK) {
 
@@ -311,6 +310,70 @@ ListMarketProfitAndLossResponse
 ExchangeApi::listMarketProfitAndLoss(const ListMarketProfitAndLossRequest& request) const {
     ListMarketProfitAndLossResponse response;
     performRequest(Api::BETTING, "listMarketProfitAndLoss", request, response);
+    return response;
+}
+
+SetDefaultExposureLimitForMarketGroupsResponse
+ExchangeApi::setDefaultExposureLimitForMarketGroups(const SetDefaultExposureLimitForMarketGroupsRequest& request) const {
+    SetDefaultExposureLimitForMarketGroupsResponse response;
+    performRequest(Api::BETTING, "setDefaultExposureLimitForMarketGroups", request, response);
+    return response;
+}
+
+SetExposureLimitForMarketGroupResponse
+ExchangeApi::setExposureLimitForMarketGroup(const SetExposureLimitForMarketGroupRequest& request) const {
+    SetExposureLimitForMarketGroupResponse response;
+    performRequest(Api::BETTING, "setExposureLimitForMarketGroup", request, response);
+    return response;
+}
+
+RemoveDefaultExposureLimitForMarketGroupsResponse
+ExchangeApi::removeDefaultExposureLimitForMarketGroups(const RemoveDefaultExposureLimitForMarketGroupsRequest& request) const {
+    RemoveDefaultExposureLimitForMarketGroupsResponse response;
+    performRequest(Api::BETTING, "removeDefaultExposureLimitForMarketGroups", request, response);
+    return response;
+}
+
+RemoveExposureLimitForMarketGroupResponse
+ExchangeApi::removeExposureLimitForMarketGroup(const RemoveExposureLimitForMarketGroupRequest& request) const {
+    RemoveExposureLimitForMarketGroupResponse response;
+    performRequest(Api::BETTING, "removeExposureLimitForMarketGroup", request, response);
+    return response;
+}
+
+ListExposureLimitsForMarketGroupsResponse
+ExchangeApi::listExposureLimitsForMarketGroups(const ListExposureLimitsForMarketGroupsRequest& request) const {
+    ListExposureLimitsForMarketGroupsResponse response;
+    performRequest(Api::BETTING, "listExposureLimitsForMarketGroups", request, response);
+    return response;
+}
+
+UnblockMarketGroupResponse
+ExchangeApi::unblockMarketGroup(const UnblockMarketGroupRequest& request) const {
+    UnblockMarketGroupResponse response;
+    performRequest(Api::BETTING, "unblockMarketGroup", request, response);
+    return response;
+}
+
+GetExposureReuseEnabledEventsResponse
+ExchangeApi::getExposureReuseEnabledEvents() const {
+    DummyRequest request;
+    GetExposureReuseEnabledEventsResponse response;
+    performRequest(Api::BETTING, "getExposureReuseEnabledEvents", request, response);
+    return response;
+}
+
+AddExposureReuseEnabledEventsResponse
+ExchangeApi::addExposureReuseEnabledEvents(const AddExposureReuseEnabledEventsRequest& request) const {
+    AddExposureReuseEnabledEventsResponse response;
+    performRequest(Api::BETTING, "addExposureReuseEnabledEvents", request, response);
+    return response;
+}
+
+RemoveExposureReuseEnabledEventsResponse
+ExchangeApi::removeExposureReuseEnabledEvents(const RemoveExposureReuseEnabledEventsRequest& request) const {
+    RemoveExposureReuseEnabledEventsResponse response;
+    performRequest(Api::BETTING, "removeExposureReuseEnabledEvents", request, response);
     return response;
 }
 
@@ -484,29 +547,28 @@ bool ExchangeApi::performRequest(const Api api,
         const std::string& method,
         const JsonRequest& jsonRequest,
         JsonResponse& jsonResponse) const {
+    CurlHandle handle = curl->easyInit();
 
-    std::unique_ptr<CURL, void(*)(CURL*)> curl(curl_easy_init(), &curl_easy_cleanup);
-
-    if (curl.get()) {
+    if (handle.get()) {
 
         SList headers;
-        initRequest(api, method, curl.get(), headers);
+        initRequest(api, method, handle, headers);
 
         std::string request = jsonRequest.toString();
 
         if (request != "") {
-            curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, request.c_str());
+            curl->easySetopt(handle, CURLOPT_POSTFIELDS, request.c_str());
         }
 
-        curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeToStream);
+        curl->easySetopt(handle, CURLOPT_WRITEFUNCTION, writeToStream);
         std::stringstream result;
-        curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &result);
+        curl->easySetopt(handle, CURLOPT_WRITEDATA, &result);
 
         char errorBuffer[CURL_ERROR_SIZE];
-        curl_easy_setopt(curl.get(), CURLOPT_ERRORBUFFER, errorBuffer);
+        curl->easySetopt(handle, CURLOPT_ERRORBUFFER, errorBuffer);
         errorBuffer[0] = 0;
 
-        CURLcode curlResult = curl_easy_perform(curl.get());
+        CURLcode curlResult = curl->easyPerform(handle);
         if (curlResult == CURLE_OK) {
             result >> jsonResponse;
         } else {
@@ -519,12 +581,11 @@ bool ExchangeApi::performRequest(const Api api,
     return false;
 }
 
-bool ExchangeApi::initRequest(const Api api, const std::string method, CURL* curl, SList& headers) const {
-
-    curl_easy_setopt(curl, CURLOPT_URL, buildUri(api, method).c_str());
-    curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
-    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "gzip");
-    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
+bool ExchangeApi::initRequest(const Api api, const std::string method, const CurlHandle& handle, SList& headers) const {
+    curl->easySetopt(handle, CURLOPT_URL, buildUri(api, method).c_str());
+    curl->easySetopt(handle, CURLOPT_USE_SSL, CURLUSESSL_ALL);
+    curl->easySetopt(handle, CURLOPT_ACCEPT_ENCODING, "gzip");
+    curl->easySetopt(handle, CURLOPT_NOSIGNAL, 1);
 
     std::string header = "X-Application: " + applicationKey;
     headers.append(header);
@@ -532,7 +593,7 @@ bool ExchangeApi::initRequest(const Api api, const std::string method, CURL* cur
     headers.append(header);
     headers.append("content-type: application/json");
 
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers.get());
+    curl->easySetopt(handle, CURLOPT_HTTPHEADER, headers.get());
 
     return true;
 }
@@ -555,10 +616,6 @@ std::string ExchangeApi::buildUri(const Api api, const std::string method) const
     }
 
     return HOST_UK + "/exchange/" + apiString + "/rest/v1.0/" + method + "/";
-}
-
-ExchangeApi::~ExchangeApi() {
-    curl_global_cleanup();
 }
 
 }

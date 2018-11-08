@@ -6,6 +6,7 @@
 #define EXCHANGEAPI_H
 
 #include <curl/curl.h>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -50,13 +51,19 @@
 #include "greentop/account/VendorAccessTokenInfo.h"
 #include "greentop/account/VendorDetails.h"
 
+#include "greentop/curl/Curl.h"
+#include "greentop/curl/ICurl.h"
+
 #include "greentop/heartbeat/HeartbeatRequest.h"
 #include "greentop/heartbeat/HeartbeatReport.h"
 
+#include "greentop/sport/AddExposureReuseEnabledEventsRequest.h"
+#include "greentop/sport/AddExposureReuseEnabledEventsResponse.h"
 #include "greentop/sport/CancelExecutionReport.h"
 #include "greentop/sport/CancelOrdersRequest.h"
 #include "greentop/sport/ClearedOrderSummaryReport.h"
 #include "greentop/sport/CurrentOrderSummaryReport.h"
+#include "greentop/sport/GetExposureReuseEnabledEventsResponse.h"
 #include "greentop/sport/ListClearedOrdersRequest.h"
 #include "greentop/sport/ListCompetitionsRequest.h"
 #include "greentop/sport/ListCompetitionsResponse.h"
@@ -67,6 +74,8 @@
 #include "greentop/sport/ListEventsResponse.h"
 #include "greentop/sport/ListEventTypesRequest.h"
 #include "greentop/sport/ListEventTypesResponse.h"
+#include "greentop/sport/ListExposureLimitsForMarketGroupsRequest.h"
+#include "greentop/sport/ListExposureLimitsForMarketGroupsResponse.h"
 #include "greentop/sport/ListMarketBookRequest.h"
 #include "greentop/sport/ListMarketBookResponse.h"
 #include "greentop/sport/ListMarketCatalogueRequest.h"
@@ -83,8 +92,20 @@
 #include "greentop/sport/ListVenuesResponse.h"
 #include "greentop/sport/PlaceExecutionReport.h"
 #include "greentop/sport/PlaceOrdersRequest.h"
+#include "greentop/sport/RemoveDefaultExposureLimitForMarketGroupsRequest.h"
+#include "greentop/sport/RemoveDefaultExposureLimitForMarketGroupsResponse.h"
+#include "greentop/sport/RemoveExposureLimitForMarketGroupRequest.h"
+#include "greentop/sport/RemoveExposureLimitForMarketGroupResponse.h"
+#include "greentop/sport/RemoveExposureReuseEnabledEventsRequest.h"
+#include "greentop/sport/RemoveExposureReuseEnabledEventsResponse.h"
 #include "greentop/sport/ReplaceExecutionReport.h"
 #include "greentop/sport/ReplaceOrdersRequest.h"
+#include "greentop/sport/SetDefaultExposureLimitForMarketGroupsRequest.h"
+#include "greentop/sport/SetDefaultExposureLimitForMarketGroupsResponse.h"
+#include "greentop/sport/SetExposureLimitForMarketGroupRequest.h"
+#include "greentop/sport/SetExposureLimitForMarketGroupResponse.h"
+#include "greentop/sport/UnblockMarketGroupRequest.h"
+#include "greentop/sport/UnblockMarketGroupResponse.h"
 #include "greentop/sport/UpdateExecutionReport.h"
 #include "greentop/sport/UpdateOrdersRequest.h"
 
@@ -117,8 +138,9 @@ class ExchangeApi {
          *
          * @param applicationKey The user's application key.  It is required by all operations except login,
          *        createDeveloperAppKeys and getDeveloperAppKeys.
+         * @param curl A wrapper around libcurl.
          */
-        ExchangeApi(const std::string& applicationKey = "");
+        ExchangeApi(const std::string& applicationKey = "", std::unique_ptr<ICurl>&& curl = std::unique_ptr<Curl>(new Curl()));
 
         /**
          * Sets the login end point to use.
@@ -304,6 +326,74 @@ class ExchangeApi {
         ListMarketProfitAndLossResponse listMarketProfitAndLoss(const ListMarketProfitAndLossRequest& request) const;
 
         /**
+         * Create/update default exposure limit for market groups of given type. New value and
+         * breach action will be immediately applied to existing instances of this type (unless
+         * overridden using setExposureLimitForMarketGroup). If default values are overridden for
+         * market groups (using setExposureLimitForMarketGroup), overrides will NOT be touched. In
+         * order to clear this limit "removeDefaultExposureLimitForMarketGroups" operation should
+         * be used. It's not allowed to set default limit to an empty limit (see type
+         * ExposureLimit).
+         */
+        SetDefaultExposureLimitForMarketGroupsResponse setDefaultExposureLimitForMarketGroups(const SetDefaultExposureLimitForMarketGroupsRequest& request) const;
+
+        /**
+         * Create/update exposure limit for a market group. New limit will be applied immediately
+         * (even if a default limit exists for this type). The limit will be deleted upon account
+         * action (see deleteMarketGroupExposureLimit) or when no active markets remain under
+         * market group. It is possible to "invalidate" default limit for a specific group by
+         * using a "empty" limit (see type ExposureLimit). Upon successful execution of the
+         * request, the effective limit for this group will be the one set by this request
+         * (Properties will NOT be inherited from default limit).
+         */
+        SetExposureLimitForMarketGroupResponse setExposureLimitForMarketGroup(const SetExposureLimitForMarketGroupRequest& request) const;
+
+        /**
+         * Remove default exposure limit for a market group type. This operation will NOT
+         * remove/update any market group limits.
+         */
+        RemoveDefaultExposureLimitForMarketGroupsResponse removeDefaultExposureLimitForMarketGroups(const RemoveDefaultExposureLimitForMarketGroupsRequest& request) const;
+
+        /**
+         * Delete exposure limit for a market group. If a default exposure limit exist for market
+         * type, it takes effect immediately.
+         */
+        RemoveExposureLimitForMarketGroupResponse removeExposureLimitForMarketGroup(const RemoveExposureLimitForMarketGroupRequest& request) const;
+
+        /**
+         * Response to this request returns default group limit and group limits grouped by type.
+         * If marketGroupTypeFilter is not populated values for all types are returned. The
+         * response will always contain the default limit. It is possible to control which groups
+         * to return using marketGroupsFilter parameter. If marketGroupsFilter is not set all group
+         * limits are returned. If an emtpy list is passed only default limit(s) is returned. When
+         * marketGroupTypeFilter and marketGroupsFilter used together, all groups in
+         * marketGroupsFilter are required to be of same type (type used in marketGroupTypeFilter).
+         */
+        ListExposureLimitsForMarketGroupsResponse listExposureLimitsForMarketGroups(const ListExposureLimitsForMarketGroupsRequest& request) const;
+
+        /**
+         * Unblock a market group after it has been blocked due to the breach of a previously set
+         * exposure limit.
+         */
+        UnblockMarketGroupResponse unblockMarketGroup(const UnblockMarketGroupRequest& request) const;
+
+        /**
+         * Retrieves events from exposure reuse enabled events list. To edit this list use
+         * addExposureReuseEnabledEvents and removeExposureReuseEnabledEvents operations.
+         */
+        GetExposureReuseEnabledEventsResponse getExposureReuseEnabledEvents() const;
+
+        /**
+         * Enables events for exposure reuse by appending them to the current list of events
+         * already enabled.
+         */
+        AddExposureReuseEnabledEventsResponse addExposureReuseEnabledEvents(const AddExposureReuseEnabledEventsRequest& request) const;
+
+        /**
+         * Removes events from exposure reuse enabled events list.
+         */
+        RemoveExposureReuseEnabledEventsResponse removeExposureReuseEnabledEvents(const RemoveExposureReuseEnabledEventsRequest& request) const;
+
+        /**
          * Create 2 application keys for given user; one active and the other delayed.
          */
         DeveloperApp createDeveloperAppKeys(const CreateDeveloperAppKeysRequest& request) const;
@@ -440,8 +530,6 @@ class ExchangeApi {
          */
         HeartbeatReport heartbeat(const HeartbeatRequest& request) const;
 
-        ~ExchangeApi();
-
     private:
         static const std::string HOST_UK;
 
@@ -451,8 +539,9 @@ class ExchangeApi {
         std::string applicationKey;
         menu::Menu menu;
         Json::Value pendingMenuJson;
+        std::unique_ptr<ICurl> curl;
 
-        bool initRequest(const Api api, const std::string method, CURL* curl, SList& headers) const;
+        bool initRequest(const Api api, const std::string method, const CurlHandle& handle, SList& headers) const;
 
         bool performRequest(
             const Api api,
